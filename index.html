@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>旋转矩阵求解旋转轴和角度</title>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <style>
+      input {
+        width: 70px;
+        text-align: center;
+      }
+      .loading {
+        display: none;
+        text-align: center;
+      }
+      .spinner-border {
+        width: 3rem;
+        height: 3rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-4">
+      <h2>旋转矩阵求解旋转轴和角度</h2>
+
+      <!-- Matrix Input Form -->
+      <form id="matrixForm" class="my-4">
+        <table class="table table-bordered">
+          <tr>
+            <td><input type="text" id="m11" class="form-control" placeholder="m11" value="0" /></td>
+            <td><input type="text" id="m12" class="form-control" placeholder="m12" value="1" /></td>
+            <td><input type="text" id="m13" class="form-control" placeholder="m13" value="0" /></td>
+          </tr>
+          <tr>
+            <td><input type="text" id="m21" class="form-control" placeholder="m21" value="0" /></td>
+            <td><input type="text" id="m22" class="form-control" placeholder="m22" value="0" /></td>
+            <td><input type="text" id="m23" class="form-control" placeholder="m23" value="-1" /></td>
+          </tr>
+          <tr>
+            <td><input type="text" id="m31" class="form-control" placeholder="m31" value="-1" /></td>
+            <td><input type="text" id="m32" class="form-control" placeholder="m32" value="0" /></td>
+            <td><input type="text" id="m33" class="form-control" placeholder="m33" value="0" /></td>
+          </tr>
+        </table>
+        <button type="button" class="btn btn-primary" onclick="solveEquations()">Solve</button>
+      </form>
+
+      <!-- Solution Output -->
+      <h3>Solution:</h3>
+      <div id="solution" class="p-3 border bg-light"></div>
+    </div>
+
+    <!-- Loading Spinner (hidden by default) -->
+    <div id="loadingOverlay" class="loading">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+
+    <!-- Bootstrap Modal for loading animation -->
+    <div
+      class="modal fade"
+      id="loadingModal"
+      tabindex="-1"
+      aria-labelledby="loadingModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-body text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">Processing...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 创建 Web Worker
+      const pyodideWorker = new Worker("pyodideWorker.js");
+
+      let pyodideReady = false; // 检查 Pyodide 是否已初始化
+
+      // 显示或隐藏加载动画
+      function showLoadingModal(show) {
+        if (show) {
+          new bootstrap.Modal(document.getElementById('loadingModal')).show();
+        } else {
+          let modal = bootstrap.Modal.getInstance(document.getElementById('loadingModal'));
+          modal.hide();
+        }
+      }
+
+      // 当 Web Worker 发送消息时处理
+      pyodideWorker.onmessage = function (event) {
+        if (event.data.type === "ready") {
+          pyodideReady = true;
+          showLoadingModal(false); // 隐藏加载动画
+        } else if (event.data.type === "result") {
+          // 设置结果并渲染 LaTeX
+          document.getElementById("solution").innerHTML = `$$${event.data.result}$$`;
+          showLoadingModal(false); // 隐藏加载动画
+          MathJax.Hub.Queue(["Typeset", MathJax.Hub, "solution"]); // 渲染 LaTeX
+        } else if (event.data.type === "error") {
+          alert(event.data.message);
+          showLoadingModal(false); // 隐藏加载动画
+        }
+      };
+
+      // 初始化 Pyodide 环境时显示加载动画
+      window.onload = function () {
+        showLoadingModal(true);
+        pyodideWorker.postMessage({ type: "init" }); // 初始化 Pyodide
+      };
+
+      // 发送解方程的请求到 Web Worker
+      function solveEquations() {
+        if (!pyodideReady) {
+          alert("Pyodide 环境尚未初始化完成，请稍后再试。");
+          return;
+        }
+
+        showLoadingModal(true); // 显示加载动画
+
+        // 获取 3x3 矩阵的输入值
+        let matrix = [
+          [
+            parseFloat(document.getElementById("m11").value),
+            parseFloat(document.getElementById("m12").value),
+            parseFloat(document.getElementById("m13").value),
+          ],
+          [
+            parseFloat(document.getElementById("m21").value),
+            parseFloat(document.getElementById("m22").value),
+            parseFloat(document.getElementById("m23").value),
+          ],
+          [
+            parseFloat(document.getElementById("m31").value),
+            parseFloat(document.getElementById("m32").value),
+            parseFloat(document.getElementById("m33").value),
+          ],
+        ];
+
+        let pythonCode = `from sympy import Eq, solve, symbols, latex, sin, cos
+
+rx, ry, rz, phi = symbols('rx ry rz phi')
+
+eq1 = Eq(rx**2 * (1 - cos(phi)) + cos(phi), ${matrix[0][0]})
+eq2 = Eq(rx * ry * (1 - cos(phi)) - rz * sin(phi), ${matrix[0][1]})
+eq3 = Eq(rx * rz * (1 - cos(phi)) + ry * sin(phi), ${matrix[0][2]})
+eq4 = Eq(rx * ry * (1 - cos(phi)) + rz * sin(phi), ${matrix[1][0]})
+eq5 = Eq(ry**2 * (1 - cos(phi)) + cos(phi), ${matrix[1][1]})
+eq6 = Eq(ry * rz * (1 - cos(phi)) - rx * sin(phi), ${matrix[1][2]})
+eq7 = Eq(rx * rz * (1 - cos(phi)) - ry * sin(phi), ${matrix[2][0]})
+eq8 = Eq(ry * rz * (1 - cos(phi)) + rx * sin(phi), ${matrix[2][1]})
+eq9 = Eq(rz**2 * (1 - cos(phi)) + cos(phi), ${matrix[2][2]})
+
+# 求解方程，并将结果转换为 LaTeX 代码
+solution = set(solve([eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9], (rx, ry, rz, phi)))
+
+solution_latex = ', '.join([
+    f'\\left( {", ".join(map(lambda x: latex(x), sol))} \\right)' 
+    for sol in solution
+])
+
+solution_latex
+
+`;
+
+        // 将 Python 代码发送到 Web Worker
+        pyodideWorker.postMessage({ type: "run", code: pythonCode });
+      }
+    </script>
+  </body>
+</html>
